@@ -34,7 +34,7 @@ export function ModelDownloadDialog({ visible, isDarkMode }: ModelDownloadDialog
             <Text style={styles.title}>Download FunctionGemma Model?</Text>
             <Text style={styles.description}>
               This app uses FunctionGemma, a 270M parameter model for function calling.
-              The model is approximately 288MB and will be downloaded to your device.
+              The model is approximately 253MB (Q4_K_M quantized) and will be downloaded to your device.
             </Text>
             <Text style={styles.subtext}>
               The model runs entirely on-device for privacy and offline use.

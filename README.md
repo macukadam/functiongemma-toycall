@@ -1,6 +1,6 @@
 # FunctionGemma Tool Calling Demo
 
-A proof-of-concept Expo React Native app demonstrating on-device LLM tool calling using Google's FunctionGemma model with MediaPipe inference.
+A proof-of-concept Expo React Native app demonstrating on-device LLM tool calling using Google's FunctionGemma model with llama.rn (llama.cpp) inference.
 
 ## Overview
 
@@ -8,14 +8,16 @@ This app showcases how to run a local LLM (FunctionGemma 270M) on mobile devices
 
 ## Features
 
-- **On-Device Inference**: Runs FunctionGemma 270M entirely on the device using MediaPipe
-- **Lazy Model Loading**: Asks user permission before downloading the ~288MB model
+- **On-Device Inference**: Runs FunctionGemma 270M entirely on the device using llama.rn (llama.cpp)
+- **GGUF Format**: Uses the industry-standard GGUF model format with Q4_K_M quantization
+- **Lazy Model Loading**: Asks user permission before downloading the ~253MB model
 - **3 Distinctive Tool Calls**:
   - `change_theme` - Toggle between light/dark mode
   - `show_notification` - Display toast notifications
   - `navigate_to_screen` - Navigate between app screens
 - **Real UI Effects**: Tool calls actually modify the app's state and UI
 - **Chat Interface**: Natural language input with suggested prompts
+- **GPU Acceleration**: Supports OpenCL and Hexagon DSP on Android
 
 ## Screenshots
 
@@ -43,21 +45,24 @@ cd functiongemma
 # Install dependencies
 npm install
 
-# Start the development server
-npx expo start
+# Generate native projects
+npx expo prebuild --platform android
+
+# Build the app
+cd android && ./gradlew assembleDebug
 ```
 
 ## Running the App
 
 ```bash
-# Android
-npm run android
+# Start the development server
+npx expo start
 
-# iOS
-npm run ios
+# Or run directly on Android
+npm run android
 ```
 
-> **Note**: This app requires a development build since it uses native modules. It will not work with Expo Go.
+> **Note**: This app requires a development build since it uses native modules (llama.rn). It will not work with Expo Go.
 
 ### Creating a Development Build
 
@@ -65,14 +70,14 @@ npm run ios
 # For Android
 npx expo run:android
 
-# For iOS
+# For iOS (if supported)
 npx expo run:ios
 ```
 
 ## Usage
 
 1. **Load the Model**: Tap "Load Model" button in the header
-2. **Confirm Download**: The app will ask permission to download the FunctionGemma model (~288MB)
+2. **Confirm Download**: The app will ask permission to download the FunctionGemma model (~253MB)
 3. **Wait for Loading**: After download, the model loads into memory
 4. **Start Chatting**: Use natural language to trigger tool calls
 
@@ -94,7 +99,7 @@ functiongemma/
 ├── App.tsx                          # Main app component
 ├── src/
 │   ├── context/
-│   │   └── LLMContext.tsx           # LLM state management
+│   │   └── LLMContext.tsx           # LLM state management (llama.rn)
 │   ├── hooks/
 │   │   └── useToolCalls.ts          # Tool parsing & execution
 │   ├── types/
@@ -105,7 +110,8 @@ functiongemma/
 │       ├── ScreenIndicator.tsx      # Navigation display
 │       └── NotificationToast.tsx    # Toast notifications
 ├── docs/
-│   └── FINE_TUNING.md               # Fine-tuning guide
+│   ├── FINE_TUNING.md               # Fine-tuning guide
+│   └── ALTERNATIVE_RUNTIMES.md      # Runtime options documentation
 ├── app.json                         # Expo configuration
 └── package.json                     # Dependencies
 ```
@@ -149,21 +155,75 @@ FunctionGemma outputs tool calls in this format:
 
 ## Model Information
 
-- **Model**: FunctionGemma 270M (Mobile Actions fine-tune)
-- **Size**: ~288MB (quantized INT8)
-- **Source**: [HuggingFace](https://huggingface.co/JackJ1/functiongemma-270m-it-mobile-actions-litertlm)
-- **Format**: LiteRT (.litertlm) for MediaPipe inference
+- **Model**: FunctionGemma 270M IT (Instruction Tuned)
+- **Format**: GGUF (llama.cpp compatible)
+- **Quantization**: Q4_K_M (good balance of size/quality)
+- **Size**: ~253MB
+- **Source**: [bartowski/google_functiongemma-270m-it-GGUF](https://huggingface.co/bartowski/google_functiongemma-270m-it-GGUF)
+
+### Alternative Quantizations
+
+| Quantization | Size | Quality |
+|-------------|------|---------|
+| Q4_0 | 242 MB | Smaller, slightly lower quality |
+| Q4_K_M | 253 MB | **Default** - Good balance |
+| Q8_0 | 292 MB | Better quality, larger size |
 
 ## Dependencies
 
 - `expo` ~54.0.31
-- `expo-llm-mediapipe` ^0.6.0
+- `llama.rn` - React Native bindings for llama.cpp
+- `expo-file-system` - File system access for model storage
 - `react` 19.1.0
 - `react-native` 0.81.5
+
+## Technical Details
+
+### llama.rn Configuration
+
+The model is initialized with these settings:
+
+```typescript
+await initLlama({
+  model: modelPath,
+  n_ctx: 2048,        // Context window size
+  n_batch: 512,       // Batch size for prompt processing
+  n_threads: 4,       // Number of threads for inference
+  use_mlock: true,    // Lock model in memory
+  use_mmap: true,     // Memory-map the model file
+});
+```
+
+### Inference Settings
+
+```typescript
+await context.completion({
+  prompt: fullPrompt,
+  n_predict: 256,       // Max tokens to generate
+  temperature: 0.3,     // Lower temperature for focused outputs
+  top_k: 40,
+  top_p: 0.9,
+  stop: ['User:', '\n\n', '<|endoftext|>'],
+});
+```
 
 ## Fine-Tuning
 
 Want to customize the model for your own tools? See the [Fine-Tuning Guide](docs/FINE_TUNING.md).
+
+## Build Notes
+
+### First Build Time
+
+The first build takes 10-15 minutes due to llama.cpp's large C++ codebase being compiled. Subsequent builds are much faster.
+
+### ProGuard (Release Builds)
+
+For release builds, add to `android/app/proguard-rules.pro`:
+
+```proguard
+-keep class com.rnllama.** { *; }
+```
 
 ## Limitations
 
@@ -171,6 +231,7 @@ Want to customize the model for your own tools? See the [Fine-Tuning Guide](docs
 - Model download requires internet connection
 - First inference may be slow due to model initialization
 - Limited to the 3 predefined tools (without fine-tuning)
+- iOS support depends on llama.rn iOS compatibility
 
 ## Contributing
 
@@ -183,5 +244,6 @@ MIT License - see LICENSE file for details.
 ## Acknowledgments
 
 - [Google FunctionGemma](https://ai.google.dev/gemma/docs/functiongemma) - The base model
-- [expo-llm-mediapipe](https://github.com/tirthajyoti-ghosh/expo-llm-mediapipe) - Expo wrapper for MediaPipe LLM
-- [MediaPipe](https://developers.google.com/mediapipe) - On-device ML framework
+- [llama.rn](https://github.com/mybigday/llama.rn) - React Native bindings for llama.cpp
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) - C++ inference engine
+- [bartowski](https://huggingface.co/bartowski) - GGUF quantized models
